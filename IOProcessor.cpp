@@ -57,6 +57,16 @@ int SafetyDataArea::GetSegmentNum() {
 	return -1;
 }
 
+int SafetyDataArea::GetFinalSegmentNum() {
+	AutomaticMutex guard(m_mutex);
+	if (!m_segArray.empty()) {
+		seg = m_segArray.back();
+		return seg.num;
+	}
+
+	return -1;
+}
+
 int64_t SafetyDataArea::GetSegmentStartTime() {
 	AutomaticMutex guard(m_mutex);
 	if (!m_segArray.empty()) {
@@ -93,7 +103,7 @@ CFFmpegIOProcessor::CFFmpegIOProcessor() :
 }
 
 CFFmpegIOProcessor::~CFFmpegIOProcessor() {
-
+	Close();
 }
 
 void CFFmpegIOProcessor::Close() {
@@ -158,7 +168,7 @@ int CFFmpegIOProcessor::InitInputFormatContext(const char *srcName) {
 	return 0;
 }
 
-int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams) {
+int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams, const int segment_start_num) {
 	int ret;
 	AVStream *out_stream;
 	AVStream *in_stream;
@@ -235,12 +245,54 @@ int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams) {
 	sprintf(&val, "%d", pParams->nSegWrap);
 	av_opt_set(ofmt_ctx->priv_data, "segment_wrap", &val, 0);
 
+
+	sprintf(&val, "%d", segment_start_num);
+	av_opt_set(ofmt_ctx->priv_data, "segment_start_number", &val, 0);
+
 	ret = avformat_write_header(ofmt_ctx, &options);
 	if (ret < 0) {
 		av_log(NULL, AV_LOG_ERROR,
 				"Error occurred when write format header.\n");
 		return ret;
 	}
+
+	return 0;
+}
+
+int CFFmpegIOProcessor::ResetInputFormatContext(const char *srcName) {
+
+	fprintf(stderr, "Reset Input FormatContext.\n");
+
+	if (ifmt_ctx)
+		avformat_close_input(&ifmt_ctx);
+	if (h264_in_bsf)
+		av_bitstream_filter_close(h264_in_bsf);
+
+	if(InitInputFormatContext(srcName) < 0)
+		return -1;
+
+	return 0;
+}
+
+int CFFmpegIOProcessor::ResetOutputFormatContext(sInputParams *pParams , const int segment_start_num) {
+
+	fprintf(stderr, "Reset Output FormatContext.\n");
+
+	if (aac_bsf)
+		av_bitstream_filter_close(aac_bsf);
+	if (ofmt_ctx) {
+		av_write_trailer(ofmt_ctx);
+		//		 Free the streams
+		for (int i = 0; i < ofmt_ctx->nb_streams; i++) {
+			avcodec_close(ofmt_ctx->streams[i]->codec);
+		}
+		if (!(ofmt_ctx->oformat->flags & AVFMT_NOFILE))
+			avio_close(ofmt_ctx->pb);
+		avformat_free_context(ofmt_ctx);
+	}
+
+	if(InitOutputFormatContext(pParams, segment_start_num) < 0)
+		return -1;
 
 	return 0;
 }

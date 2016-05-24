@@ -92,12 +92,11 @@ mfxU32 MFX_STDCALL RunReceiver(void *params) {
 
 	std::auto_ptr<CReceiver> pReceiverPipeline;
 
-//	while (1) {
 	pReceiverPipeline.reset(new CReceiver);
 
 	pReceiverPipeline->InitReceiver(pParams);
 
-	pReceiverPipeline->ReceivingLoop();
+	pReceiverPipeline->ReceivingLoop(pParams);
 
 	printf("Receiver Thread: %d Finished.\n", pParams->nThreadID);
 

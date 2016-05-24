@@ -34,6 +34,8 @@ extern "C" {
 #define SEGMENT_WRAP 1800
 #define SHIFT_TIME_IN_SECOND 3600
 #define SHIFT_TIME_IN_MILLISCOND 3600000
+#define NEED_TO_RESTART -10
+#define NEED_TO_BREAK 0
 
 // A macro to disallow the copy constructor and operator= functions
 // This should be used in the private: declarations for a class
@@ -130,6 +132,7 @@ public:
 	virtual void SetSegment(const int64_t dts, const int n);
 	virtual void FreeSegment();
 	virtual int GetSegmentNum();
+	virtual int GetFinalSegmentNum();
 	virtual int64_t GetSegmentStartTime();
 	virtual void CalculateShiftTime(const int64_t t);
 	virtual bool CheckShiftTime();
@@ -168,27 +171,36 @@ struct sInputParams {
 
 class CFFmpegIOProcessor {
 public:
+
 	int in_video_index;
 	int in_audio_index;
 	AVPacket pkt;
+
 	CFFmpegIOProcessor();
 	virtual ~CFFmpegIOProcessor();
 	virtual void Close();
+
 	virtual int InitInputFormatContext(const char *srcName);
-	virtual int InitOutputFormatContext(sInputParams *pParams);
+	virtual int InitOutputFormatContext(sInputParams *pParams, const int segment_start_num);
+	virtual int ResetInputFormatContext(const char *srcName);
+	virtual int ResetOutputFormatContext(sInputParams *pParams, const int segment_start_num);
+
 	virtual AVRational GetStreamTimeBase();
 	virtual AVPacket* ReadOneAVPacket();
 	virtual int WriteOneAVPacket(AVPacket *pkt);
 	virtual int Run();
 
 protected:
+
 	int out_video_index;
 	int out_audio_index;
 	AVBitStreamFilterContext* h264_in_bsf;
 	AVBitStreamFilterContext* aac_bsf;
 	AVFormatContext *ifmt_ctx;
 	AVFormatContext *ofmt_ctx;
+
 private:
+
 };
 
 #endif /* INCLUDE_IOPROCESSOR_H_ */

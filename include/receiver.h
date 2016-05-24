@@ -17,7 +17,9 @@ public:
 	virtual ~CReceiver();
 	virtual void Close();
 	virtual int InitReceiver(sInputParams *pParams);
-	virtual int ReceivingLoop();
+	virtual int ResetInput(char *srcName);
+	virtual int ResetOutput(sInputParams *pParams, const int segment_start_num);
+	virtual int ReceivingLoop(sInputParams *pParams);
 
 protected:
 

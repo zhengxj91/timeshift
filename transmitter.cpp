@@ -78,13 +78,13 @@ int CTransmitter::TransmittingLoop(sInputParams *pParams) {
 			av_log(NULL, AV_LOG_ERROR,
 					"Invalid segment filename template '%s'\n",
 					pParams->strSrcFile);
-			break;
+			continue;
 		}
 		fprintf(stderr, "Open segment : %s.\n", filename);
 		if ((ret = avio_open2(&input, filename, AVIO_FLAG_READ, NULL, NULL))
 				< 0) {
 			av_log(input, AV_LOG_ERROR, "Failed to open input: %s.\n", filename);
-			break;
+			continue;
 		}
 		for (;;) {
 			if ((ret = avio_read(input, buf, sizeof(buf))) < 0) {
