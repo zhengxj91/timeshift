@@ -97,8 +97,9 @@ int64_t SafetyDataArea::GetShiftTime() {
 }
 
 CFFmpegIOProcessor::CFFmpegIOProcessor() :
-		ofmt_ctx(NULL), ifmt_ctx(NULL), h264_in_bsf(NULL), aac_bsf(NULL), in_video_index(
-				0), in_audio_index(0), out_video_index(0), out_audio_index(0) {
+		ofmt_ctx(NULL), ifmt_ctx(NULL), h264_in_bsf(NULL), aac_bsf(NULL), in_video_index(0), in_audio_index(0), out_video_index(
+				0), out_audio_index(0), ts_offset(0), last_audio_dts(0), last_video_dts(0), dts2time(
+				0.0), start_time(0.0), m_bInited(false), m_bWaitFirstVideoPacket(false) {
 
 }
 
@@ -133,8 +134,7 @@ int CFFmpegIOProcessor::InitInputFormatContext(const char *srcName) {
 
 	av_dict_set(&format_opts, "scan_all_pmts", "1", AV_DICT_DONT_OVERWRITE);
 
-	if ((ret = avformat_open_input(&ifmt_ctx, srcName, NULL, &format_opts))
-			< 0) {
+	if ((ret = avformat_open_input(&ifmt_ctx, srcName, NULL, &format_opts)) < 0) {
 		av_log(NULL, AV_LOG_ERROR, "Cannot open input file .\n");
 		return ret;
 	}
@@ -143,6 +143,9 @@ int CFFmpegIOProcessor::InitInputFormatContext(const char *srcName) {
 		av_log(NULL, AV_LOG_ERROR, "Cannot find stream information .\n");
 		return ret;
 	}
+	if (!m_bInited)
+		ts_offset = -ifmt_ctx->start_time;
+	m_bInited = true;
 	for (int i = 0; i < ifmt_ctx->nb_streams; i++) {
 		AVStream *stream;
 		AVCodecContext *codec_ctx;
@@ -150,8 +153,9 @@ int CFFmpegIOProcessor::InitInputFormatContext(const char *srcName) {
 		codec_ctx = stream->codec;
 		if (codec_ctx->codec_type == AVMEDIA_TYPE_VIDEO) {
 			in_video_index = i;
-			if (strstr(ifmt_ctx->iformat->name, "mp4")
-					|| strstr(ifmt_ctx->iformat->name, "flv")) {
+			dts2time = (double) av_q2d(stream->time_base);
+			;
+			if (strstr(ifmt_ctx->iformat->name, "mp4") || strstr(ifmt_ctx->iformat->name, "flv")) {
 				h264_in_bsf = av_bitstream_filter_init("h264_mp4toannexb");
 				if (!h264_in_bsf) {
 					printf("Could not aquire h264_mp4toannexb filter.\n");
@@ -160,7 +164,8 @@ int CFFmpegIOProcessor::InitInputFormatContext(const char *srcName) {
 			}
 		} else if (codec_ctx->codec_type == AVMEDIA_TYPE_AUDIO) {
 			in_audio_index = i;
-		}
+		} else
+			stream->discard = AVDISCARD_ALL;
 	}
 
 	av_dump_format(ifmt_ctx, 0, srcName, 0);
@@ -176,11 +181,9 @@ int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams, const int
 	AVDictionary *options = NULL;
 	const char *service_name = NULL, *provider_name = NULL;
 	if (pParams->format) {
-		avformat_alloc_output_context2(&ofmt_ctx, NULL, pParams->format,
-				pParams->strDstFile);
+		avformat_alloc_output_context2(&ofmt_ctx, NULL, pParams->format, pParams->strDstFile);
 	} else
-		avformat_alloc_output_context2(&ofmt_ctx, NULL, "segment",
-				pParams->strDstFile);
+		avformat_alloc_output_context2(&ofmt_ctx, NULL, "mpegts", pParams->strDstFile);
 
 	if (!ofmt_ctx) {
 		av_log(NULL, AV_LOG_ERROR, "Could not create output format context\n");
@@ -198,8 +201,7 @@ int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams, const int
 			printf("Failed to copy context from input to output stream.\n");
 			return -1;
 		}
-		if (((0 == strcmp(ofmt_ctx->oformat->name, "flv"))
-				|| (0 == strcmp(ofmt_ctx->oformat->name, "mp4")))
+		if (((0 == strcmp(ofmt_ctx->oformat->name, "flv")) || (0 == strcmp(ofmt_ctx->oformat->name, "mp4")))
 				&& (out_stream->codec->codec_id == AV_CODEC_ID_AAC)) {
 			aac_bsf = av_bitstream_filter_init("aac_adtstoasc");
 			if (!aac_bsf) {
@@ -207,8 +209,7 @@ int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams, const int
 				return -1;
 			}
 		}
-		out_stream->time_base = av_add_q(out_stream->codec->time_base,
-				(AVRational ) { 0, 1 });
+		out_stream->time_base = av_add_q(out_stream->codec->time_base, (AVRational ) { 0, 1 });
 		out_stream->codec->codec_tag = 0;
 		if (ofmt_ctx->oformat->flags & AVFMT_GLOBALHEADER)
 			out_stream->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
@@ -217,42 +218,49 @@ int CFFmpegIOProcessor::InitOutputFormatContext(sInputParams *pParams, const int
 	if (!h264_in_bsf) {
 		title = av_dict_get(ifmt_ctx->programs[0]->metadata, "service_name",
 		NULL, 0);
-		provider = av_dict_get(ifmt_ctx->programs[0]->metadata,
-				"service_provider",
-				NULL, 0);
+		provider = av_dict_get(ifmt_ctx->programs[0]->metadata, "service_provider",
+		NULL, 0);
 	}
-	service_name =
-			(title && (0 != strcmp(title->value, "Service01"))) ?
-					title->value : DEFAULT_SERVICE_NAME;
-	provider_name =
-			(provider && (0 != strcmp(provider->value, "FFmpeg"))) ?
-					provider->value : DEFAULT_PROVIDER_NAME;
+	service_name = (title && (0 != strcmp(title->value, "Service01"))) ? title->value : DEFAULT_SERVICE_NAME;
+	provider_name = (provider && (0 != strcmp(provider->value, "FFmpeg"))) ?
+			provider->value : DEFAULT_PROVIDER_NAME;
 	av_dict_set(&ofmt_ctx->metadata, "service_name", service_name, 0);
 	av_dict_set(&ofmt_ctx->metadata, "service_provider", provider_name, 0);
 
 	av_dump_format(ofmt_ctx, 0, pParams->strDstFile, 1);
 
-	if (!(ofmt_ctx->oformat->flags & AVFMT_NOFILE)) {
-		ret = avio_open(&ofmt_ctx->pb, pParams->strDstFile, AVIO_FLAG_WRITE);
-		if (ret < 0) {
-			av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'",
-					pParams->strDstFile);
-			return ret;
-		}
-	}
-
-	char val;
-	sprintf(&val, "%d", pParams->nSegWrap);
-	av_opt_set(ofmt_ctx->priv_data, "segment_wrap", &val, 0);
-
-
-	sprintf(&val, "%d", segment_start_num);
-	av_opt_set(ofmt_ctx->priv_data, "segment_start_number", &val, 0);
+//	if (!(ofmt_ctx->oformat->flags & AVFMT_NOFILE)) {
+//		ret = avio_open(&ofmt_ctx->pb, pParams->strDstFile, AVIO_FLAG_WRITE);
+//		if (ret < 0) {
+//			av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'", pParams->strDstFile);
+//			return ret;
+//		}
+//	}
+//
+//	char *val = new char[10];
+//	bzero(val, 10 * sizeof(char));
+//
+//	sprintf(val, "%d", pParams->nSegWrap);
+//	av_opt_set(ofmt_ctx->priv_data, "segment_wrap", val, 0);
+//	av_opt_set(ofmt_ctx->priv_data, "segment_list_size", val, 0);
+//
+//	sprintf(val, "%d", pParams->nSegTime);
+//	av_opt_set(ofmt_ctx->priv_data, "segment_time", val, 0);
+//
+//	sprintf(val, "%d", segment_start_num);
+//	av_opt_set(ofmt_ctx->priv_data, "segment_start_number", val, 0);
+//
+//	if (pParams->strHLSM3U8)
+//		av_opt_set(ofmt_ctx->priv_data, "segment_list", pParams->strHLSM3U8, 0);
+//
+//	if (pParams->strM3U8Prefix)
+//		av_opt_set(ofmt_ctx->priv_data, "segment_list_entry_prefix", pParams->strM3U8Prefix, 0);
+//
+//	delete val;
 
 	ret = avformat_write_header(ofmt_ctx, &options);
 	if (ret < 0) {
-		av_log(NULL, AV_LOG_ERROR,
-				"Error occurred when write format header.\n");
+		av_log(NULL, AV_LOG_ERROR, "Error occurred when write format header.\n");
 		return ret;
 	}
 
@@ -268,13 +276,13 @@ int CFFmpegIOProcessor::ResetInputFormatContext(const char *srcName) {
 	if (h264_in_bsf)
 		av_bitstream_filter_close(h264_in_bsf);
 
-	if(InitInputFormatContext(srcName) < 0)
+	if (InitInputFormatContext(srcName) < 0)
 		return -1;
 
 	return 0;
 }
 
-int CFFmpegIOProcessor::ResetOutputFormatContext(sInputParams *pParams , const int segment_start_num) {
+int CFFmpegIOProcessor::ResetOutputFormatContext(sInputParams *pParams, const int segment_start_num) {
 
 	fprintf(stderr, "Reset Output FormatContext.\n");
 
@@ -291,7 +299,7 @@ int CFFmpegIOProcessor::ResetOutputFormatContext(sInputParams *pParams , const i
 		avformat_free_context(ofmt_ctx);
 	}
 
-	if(InitOutputFormatContext(pParams, segment_start_num) < 0)
+	if (InitOutputFormatContext(pParams, segment_start_num) < 0)
 		return -1;
 
 	return 0;
@@ -304,30 +312,49 @@ AVRational CFFmpegIOProcessor::GetStreamTimeBase() {
 
 AVPacket* CFFmpegIOProcessor::ReadOneAVPacket() {
 	int ret = 0;
-
-	if ((ret = av_read_frame(ifmt_ctx, &pkt)) < 0) {
+	int errCount = 0;
+	while ((ret = av_read_frame(ifmt_ctx, &pkt)) < 0) {
 		if (ret == AVERROR_EOF) {
 			av_log(NULL, AV_LOG_WARNING, "End of file.\n");
-//				if ((ret = av_seek_frame(ifmt_ctx, in_video_index, 0, 0)) < 0) {
-//					av_log(NULL, AV_LOG_ERROR,
-//							"Couldn't seek to beginning of stream.\n");
-//				}
+			return NULL;
 		} else {
 			get_error_text(ret);
+			if (ResetInputFormatContext(ifmt_ctx->filename) < 0) {
+				if (++errCount > 20)
+					return NULL;
+			} else
+				errCount = 0;
 		}
-		return NULL;
+	}
+	if (m_bWaitFirstVideoPacket) {
+		if (pkt.stream_index == in_video_index) {
+			m_bWaitFirstVideoPacket = false;
+			start_time = pkt.dts * dts2time;
+		}
 	}
 
 	return &pkt;
 }
 
 int CFFmpegIOProcessor::WriteOneAVPacket(AVPacket *pkt) {
+
 	int ret = 0;
+	int index = pkt->stream_index;
+	int64_t dts = pkt->dts;
 	SegmentContext *seg = (SegmentContext *) ofmt_ctx->priv_data;
+
 	if ((ret = av_interleaved_write_frame(ofmt_ctx, pkt)) < 0) {
 		get_error_text(ret);
+		if (pkt->stream_index == out_video_index)
+			fprintf(stderr, "last_video_dts: %ld, now_dts: %ld.\n", last_video_dts, pkt->dts);
+		if (pkt->stream_index == out_audio_index)
+			fprintf(stderr, "last_audio_dts: %ld, now_dts: %ld.\n", last_audio_dts, pkt->dts);
 		return ret;
 	}
+	if (index == out_video_index)
+		last_video_dts = pkt->dts;
+	if (index == out_audio_index)
+		last_audio_dts = pkt->dts;
 
 	return seg->segment_idx;
 }
@@ -344,8 +371,7 @@ int CFFmpegIOProcessor::Run() {
 //							"Couldn't seek to beginning of stream.\n");
 //				}
 			} else {
-				av_log(NULL, AV_LOG_ERROR,
-						"%d: Error occurred when reading frame .\n", ret);
+				av_log(NULL, AV_LOG_ERROR, "%d: Error occurred when reading frame .\n", ret);
 			}
 			break;
 		}

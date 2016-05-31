@@ -19,12 +19,26 @@ public:
 	virtual int InitReceiver(sInputParams *pParams);
 	virtual int ResetInput(char *srcName);
 	virtual int ResetOutput(sInputParams *pParams, const int segment_start_num);
+	virtual int WriteM3u8List(sInputParams *pParams);
 	virtual int ReceivingLoop(sInputParams *pParams);
 
 protected:
 
-	bool m_bFirstVideoPacket;
+	bool m_bWaitFirstVPkt;
+	bool m_bKeyFrame;
 	int m_SegmentWrap;
+	int64_t m_SegmentNum;
+
+	double m_PacketTime;
+	double m_SegmentStartTime;
+	double m_SegmentTime;
+	int m_SegmentIndex;
+
+	unsigned int segment_duration_array[2048];
+	char tmp_m3u8_file[MAX_FILE_LENGTH];
+	char ts_name[MAX_FILE_LENGTH];
+
+	std::list<HLSSegment> m_SegmentList;
 
 	AVRational m_StreamTimeBase;
 	SafetyDataArea *m_pSafetyArea;

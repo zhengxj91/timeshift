@@ -30,6 +30,7 @@ extern "C" {
 
 #define DEFAULT_SERVICE_NAME "TVOD"
 #define DEFAULT_PROVIDER_NAME "CIK"
+#define MAX_FILE_LENGTH 1024
 #define SHIFT_TIME_BASE_Q (AVRational) {1, 1000}
 #define SEGMENT_WRAP 1800
 #define SHIFT_TIME_IN_SECOND 3600
@@ -113,7 +114,13 @@ typedef struct SegmentContext {
 } SegmentContext;
 
 struct HLSSegment {
-	int64_t dts;
+	char tsName[MAX_FILE_LENGTH];
+	unsigned int index;
+	unsigned int duration;
+};
+
+struct SafeSegment {
+	int dts;
 	int num;
 };
 
@@ -122,8 +129,8 @@ public:
 	int64_t m_StartTime;
 	int64_t m_ShiftTime;
 	int m_SegmentNum;
-	HLSSegment seg;
-	std::list<HLSSegment> m_segArray;
+	SafeSegment seg;
+	std::list<SafeSegment> m_segArray;
 
 	SafetyDataArea();
 	virtual ~SafetyDataArea();
@@ -147,6 +154,7 @@ struct sInputParams {
 
 	int nSrcFiles;
 	int nDstFiles;
+	int nSegTime;
 	int nSegWrap;
 	int64_t nShiftTime;
 
@@ -158,6 +166,8 @@ struct sInputParams {
 	char *strTmpFile;
 	char *strSrcFile;
 	char *strDstFile;
+	char *strHLSM3U8;
+	char *strM3U8Prefix;
 	char *strOutInterface;
 
 	SafetyDataArea *m_pSafetyArea;
@@ -174,7 +184,11 @@ public:
 
 	int in_video_index;
 	int in_audio_index;
+	double dts2time;
+	double start_time;
 	AVPacket pkt;
+	AVFormatContext *ifmt_ctx;
+	AVFormatContext *ofmt_ctx;
 
 	CFFmpegIOProcessor();
 	virtual ~CFFmpegIOProcessor();
@@ -194,10 +208,14 @@ protected:
 
 	int out_video_index;
 	int out_audio_index;
+	bool m_bInited;
+	bool m_bWaitFirstVideoPacket;
+	int64_t ts_offset;
+	int64_t last_audio_dts;
+	int64_t last_video_dts;
+
 	AVBitStreamFilterContext* h264_in_bsf;
 	AVBitStreamFilterContext* aac_bsf;
-	AVFormatContext *ifmt_ctx;
-	AVFormatContext *ofmt_ctx;
 
 private:
 

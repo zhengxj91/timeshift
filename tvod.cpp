@@ -51,6 +51,15 @@ int ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
 		} else if (0 == strcmp(strInput[i], "-of")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
 			pParams->strOutInterface = strInput[++i];
+		} else if (0 == strcmp(strInput[i], "-m3u8")) {
+			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
+			pParams->strHLSM3U8 = strInput[++i];
+		}  else if (0 == strcmp(strInput[i], "-prefix")) {
+			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
+			pParams->strM3U8Prefix = strInput[++i];
+		} else if (0 == strcmp(strInput[i], "-size")) {
+			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
+			pParams->nSegTime = atoi(strInput[++i]);
 		} else if (0 == strcmp(strInput[i], "-wrap")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
 			pParams->nSegWrap = atoi(strInput[++i]);
@@ -124,7 +133,7 @@ mfxU32 MFX_STDCALL RunTransmitter(void *params) {
 
 int CTimeShift::Run(sInputParams *pParams) {
 	mfxStatus sts;
-	int n_Thread = 2;
+	int n_Thread = 1;
 	MSDKThread *pthread = NULL;
 
 	m_pSafetyArea = new SafetyDataArea;
@@ -134,24 +143,27 @@ int CTimeShift::Run(sInputParams *pParams) {
 	pInThreadParams.strSrcFile = pParams->strSrcFile;
 	pInThreadParams.strDstFile = pParams->strTmpFile;
 	pInThreadParams.m_pSafetyArea = m_pSafetyArea;
+	pInThreadParams.strHLSM3U8 = pParams->strHLSM3U8;
+	pInThreadParams.strM3U8Prefix = pParams->strM3U8Prefix;
+	pInThreadParams.nSegTime = pParams->nSegTime ? pParams->nSegTime : 10;
 	pInThreadParams.nSegWrap = pParams->nSegWrap ? pParams->nSegWrap : 1800;
 	pInThreadParams.nThreadID = 0;
 	pthread = new MSDKThread(sts, RunReceiver, (void *) &pInThreadParams);
 	m_HDLArray.push_back(pthread);
 
 	/*Transmitter Thread Created*/
-	sInputParams pOutThreadParams;
-	pOutThreadParams.strDstFile = pParams->strDstFile;
-	pOutThreadParams.strSrcFile = pParams->strTmpFile;
-	pOutThreadParams.m_pSafetyArea = m_pSafetyArea;
-	if (pParams->nShiftTime)
-		pOutThreadParams.nShiftTime = pParams->nShiftTime * 60000;
-	else
-		pOutThreadParams.nShiftTime = SHIFT_TIME_IN_MILLISCOND;
-	pOutThreadParams.nSegWrap = pParams->nSegWrap ? pParams->nSegWrap : 1800;
-	pOutThreadParams.nThreadID = 1;
-	pthread = new MSDKThread(sts, RunTransmitter, (void *) &pOutThreadParams);
-	m_HDLArray.push_back(pthread);
+//	sInputParams pOutThreadParams;
+//	pOutThreadParams.strDstFile = pParams->strDstFile;
+//	pOutThreadParams.strSrcFile = pParams->strTmpFile;
+//	pOutThreadParams.m_pSafetyArea = m_pSafetyArea;
+//	if (pParams->nShiftTime)
+//		pOutThreadParams.nShiftTime = pParams->nShiftTime * 60000;
+//	else
+//		pOutThreadParams.nShiftTime = SHIFT_TIME_IN_MILLISCOND;
+//	pOutThreadParams.nSegWrap = pParams->nSegWrap ? pParams->nSegWrap : 1800;
+//	pOutThreadParams.nThreadID = 1;
+//	pthread = new MSDKThread(sts, RunTransmitter, (void *) &pOutThreadParams);
+//	m_HDLArray.push_back(pthread);
 
 	for (int i = 0; i < n_Thread; i++) {
 		m_HDLArray[i]->Wait();
@@ -180,7 +192,7 @@ int main(int argc, char *argv[]) {
 
 	av_register_all();
 	avformat_network_init();
-	av_log_set_level(AV_LOG_ERROR);
+	av_log_set_level(AV_LOG_INFO);
 
 	std::auto_ptr<CTimeShift> tvod;
 	tvod.reset(new CTimeShift);
