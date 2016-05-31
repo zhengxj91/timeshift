@@ -154,7 +154,6 @@ int CFFmpegIOProcessor::InitInputFormatContext(const char *srcName) {
 		if (codec_ctx->codec_type == AVMEDIA_TYPE_VIDEO) {
 			in_video_index = i;
 			dts2time = (double) av_q2d(stream->time_base);
-			;
 			if (strstr(ifmt_ctx->iformat->name, "mp4") || strstr(ifmt_ctx->iformat->name, "flv")) {
 				h264_in_bsf = av_bitstream_filter_init("h264_mp4toannexb");
 				if (!h264_in_bsf) {
@@ -343,6 +342,8 @@ int CFFmpegIOProcessor::WriteOneAVPacket(AVPacket *pkt) {
 	int64_t dts = pkt->dts;
 	SegmentContext *seg = (SegmentContext *) ofmt_ctx->priv_data;
 
+	if (pkt->stream_index == in_video_index)
+		av_log(NULL, AV_LOG_INFO, "last_mux_dts: %ld, now_dts: %ld.\n", ofmt_ctx->streams[pkt->stream_index]->cur_dts, pkt->dts);
 	if ((ret = av_interleaved_write_frame(ofmt_ctx, pkt)) < 0) {
 		get_error_text(ret);
 		if (pkt->stream_index == out_video_index)

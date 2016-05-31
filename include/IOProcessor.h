@@ -116,7 +116,7 @@ typedef struct SegmentContext {
 struct HLSSegment {
 	char tsName[MAX_FILE_LENGTH];
 	unsigned int index;
-	unsigned int duration;
+	double duration;
 };
 
 struct SafeSegment {

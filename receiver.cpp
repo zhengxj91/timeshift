@@ -11,7 +11,7 @@ using namespace std;
 
 CReceiver::CReceiver() :
 		m_bWaitFirstVPkt(true), m_pSafetyArea(NULL), m_SegmentWrap(0), m_SegmentIndex(0), m_PacketTime(0), m_SegmentNum(
-				0), m_SegmentStartTime(0.0), m_SegmentTime(0.0), m_bKeyFrame(false) {
+				0), m_SegmentStartTime(0.0), m_SegmentTime(0.0), m_MeidaSequence(0), m_bKeyFrame(false) {
 
 }
 
@@ -87,15 +87,15 @@ int CReceiver::WriteM3u8List(sInputParams *pParams) {
 				tmp_m3u8_file);
 		return -1;
 	}
-	unsigned int maxDuration = m_SegmentList.front().duration;
+	double maxDuration = m_SegmentList.front().duration;
 	for (it = m_SegmentList.begin(); it != m_SegmentList.end(); it++) {
 		if (it->duration > maxDuration) {
 			maxDuration = it->duration;
 		}
 	}
-	fprintf(list_fp, "#EXTM3U\n#EXT-X-MEDIA-SEQUENCE:%ld \n#EXT-X-TARGETDURATION:%u\n", m_SegmentNum, maxDuration);
+	fprintf(list_fp, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-TARGETDURATION:%ld\n#EXT-X-MEDIA-SEQUENCE:%ld\n", (int64_t) ceil(maxDuration), m_MeidaSequence);
 	for (it = m_SegmentList.begin(); it != m_SegmentList.end(); it++) {
-		if (fprintf(list_fp, "#EXTINF:%u,\n%s\n", it->duration, it->tsName) < 0) {
+		if (fprintf(list_fp, "#EXTINF:%f,\n%s\n", it->duration, it->tsName) < 0) {
 			fprintf(stderr, "Failed to write to tmp m3u8 index file\n");
 			return -1;
 		}
@@ -138,12 +138,17 @@ int CReceiver::ReceivingLoop(sInputParams *pParams) {
 					avio_flush(InProcessor->ofmt_ctx->pb);
 					avio_close(InProcessor->ofmt_ctx->pb);
 					m_SegmentNum++;
-					seg.duration = (unsigned int) rint(m_PacketTime - m_SegmentStartTime);
+					if(m_SegmentNum % 30 == 0) {
+						av_log(NULL, AV_LOG_INFO, "Segments: %ld", m_SegmentNum);
+					}
+					seg.duration = m_PacketTime - m_SegmentStartTime;
 					seg.index = m_SegmentIndex;
 					memcpy(seg.tsName, ts_name, MAX_FILE_LENGTH);
 					m_SegmentList.push_back(seg);
-					if (m_SegmentNum > m_SegmentWrap)
+					if (m_SegmentNum > m_SegmentWrap) {
+						m_MeidaSequence ++;
 						m_SegmentList.pop_front();
+					}
 					WriteM3u8List(pParams);
 					m_SegmentIndex++;
 					m_SegmentIndex %= m_SegmentWrap;
@@ -163,7 +168,7 @@ int CReceiver::ReceivingLoop(sInputParams *pParams) {
 
 			if ((InProcessor->WriteOneAVPacket(pkt)) < 0) {
 				outErrCount++;
-				if (++outErrCount > 10) {
+				if (++outErrCount > 20) {
 					if (ResetInput(pParams->strSrcFile) < 0) {
 						if (++inErrCount > 10)
 							break;

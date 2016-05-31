@@ -28,11 +28,12 @@ protected:
 	bool m_bKeyFrame;
 	int m_SegmentWrap;
 	int64_t m_SegmentNum;
+	int m_SegmentIndex;
+	int64_t m_MeidaSequence;
 
 	double m_PacketTime;
 	double m_SegmentStartTime;
 	double m_SegmentTime;
-	int m_SegmentIndex;
 
 	unsigned int segment_duration_array[2048];
 	char tmp_m3u8_file[MAX_FILE_LENGTH];

@@ -54,7 +54,7 @@ int ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
 		} else if (0 == strcmp(strInput[i], "-m3u8")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
 			pParams->strHLSM3U8 = strInput[++i];
-		}  else if (0 == strcmp(strInput[i], "-prefix")) {
+		} else if (0 == strcmp(strInput[i], "-prefix")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
 			pParams->strM3U8Prefix = strInput[++i];
 		} else if (0 == strcmp(strInput[i], "-size")) {
@@ -103,11 +103,13 @@ mfxU32 MFX_STDCALL RunReceiver(void *params) {
 
 	pReceiverPipeline.reset(new CReceiver);
 
-	pReceiverPipeline->InitReceiver(pParams);
+	ret = pReceiverPipeline->InitReceiver(pParams);
+	if (ret < 0) {
+		goto end;
+	}
 
 	pReceiverPipeline->ReceivingLoop(pParams);
-
-	printf("Receiver Thread: %d Finished.\n", pParams->nThreadID);
+	end: printf("Receiver Thread: %d Finished.\n", pParams->nThreadID);
 
 	return 0;
 }
@@ -164,7 +166,6 @@ int CTimeShift::Run(sInputParams *pParams) {
 //	pOutThreadParams.nThreadID = 1;
 //	pthread = new MSDKThread(sts, RunTransmitter, (void *) &pOutThreadParams);
 //	m_HDLArray.push_back(pthread);
-
 	for (int i = 0; i < n_Thread; i++) {
 		m_HDLArray[i]->Wait();
 	}
