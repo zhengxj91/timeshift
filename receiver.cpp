@@ -10,7 +10,7 @@
 using namespace std;
 
 CReceiver::CReceiver() :
-		m_bWaitFirstVPkt(true), m_pSafetyArea(NULL), m_SegmentWrap(0), m_SegmentIndex(0), m_PacketTime(0), m_SegmentNum(
+		m_bWaitFirstVPkt(true), m_pSafetyArea(NULL), m_M3u8ListSize(0), m_SegmentWrap(0), m_SegmentIndex(0), m_PacketTime(0), m_SegmentNum(
 				0), m_SegmentStartTime(0.0), m_SegmentTime(0.0), m_MeidaSequence(0), m_bKeyFrame(false) {
 
 }
@@ -50,7 +50,8 @@ int CReceiver::InitReceiver(sInputParams *pParams) {
 		return ret;
 	}
 	m_pSafetyArea = pParams->m_pSafetyArea;
-	m_SegmentWrap = pParams->nSegWrap;
+	m_M3u8ListSize = pParams->nSegWrap;
+	m_SegmentWrap = pParams->nSegWrap + 4;
 	m_SegmentTime = pParams->nSegTime;
 
 	return 0;
@@ -143,9 +144,9 @@ int CReceiver::ReceivingLoop(sInputParams *pParams) {
 					}
 					seg.duration = m_PacketTime - m_SegmentStartTime;
 					seg.index = m_SegmentIndex;
-					memcpy(seg.tsName, ts_name, MAX_FILE_LENGTH);
+					memcpy(seg.tsName, ts_name, sizeof(ts_name));
 					m_SegmentList.push_back(seg);
-					if (m_SegmentNum > m_SegmentWrap) {
+					if (m_SegmentNum > m_M3u8ListSize) {
 						m_MeidaSequence ++;
 						m_SegmentList.pop_front();
 					}

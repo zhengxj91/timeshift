@@ -312,18 +312,27 @@ AVRational CFFmpegIOProcessor::GetStreamTimeBase() {
 AVPacket* CFFmpegIOProcessor::ReadOneAVPacket() {
 	int ret = 0;
 	int errCount = 0;
-	while ((ret = av_read_frame(ifmt_ctx, &pkt)) < 0) {
-		if (ret == AVERROR_EOF) {
-			av_log(NULL, AV_LOG_WARNING, "End of file.\n");
-			return NULL;
-		} else {
-			get_error_text(ret);
-			if (ResetInputFormatContext(ifmt_ctx->filename) < 0) {
-				if (++errCount > 20)
-					return NULL;
-			} else
-				errCount = 0;
+	while (1) {
+		ret = av_read_frame(ifmt_ctx, &pkt);
+		if (ret < 0) {
+			if (ret == AVERROR_EOF) {
+				av_log(NULL, AV_LOG_WARNING, "End of file.\n");
+				return NULL;
+			} else {
+				get_error_text(ret);
+				if (ResetInputFormatContext(ifmt_ctx->filename) < 0) {
+					if (++errCount > 20)
+						return NULL;
+				} else {
+					errCount = 0;
+					continue;
+				}
+			}
+		} else if (pkt.dts < 0) {
+			av_packet_unref(&pkt);
+			continue;
 		}
+		break;
 	}
 	if (m_bWaitFirstVideoPacket) {
 		if (pkt.stream_index == in_video_index) {
@@ -342,20 +351,18 @@ int CFFmpegIOProcessor::WriteOneAVPacket(AVPacket *pkt) {
 	int64_t dts = pkt->dts;
 	SegmentContext *seg = (SegmentContext *) ofmt_ctx->priv_data;
 
-	if (pkt->stream_index == in_video_index)
-		av_log(NULL, AV_LOG_INFO, "last_mux_dts: %ld, now_dts: %ld.\n", ofmt_ctx->streams[pkt->stream_index]->cur_dts, pkt->dts);
+	if (ofmt_ctx->streams[pkt->stream_index]->cur_dts >= pkt->dts) {
+		av_log(NULL, AV_LOG_WARNING,
+				"Non monotonically increasing dts in stream: %d, last_mux_dts: %ld, now_dts: %ld.  ",
+				pkt->stream_index, ofmt_ctx->streams[pkt->stream_index]->cur_dts, pkt->dts);
+		pkt->dts = ofmt_ctx->streams[pkt->stream_index]->cur_dts + 1;
+		av_log(NULL, AV_LOG_WARNING, "change to %ld.\n", pkt->dts);
+		pkt->pts = pkt->dts;
+	}
 	if ((ret = av_interleaved_write_frame(ofmt_ctx, pkt)) < 0) {
 		get_error_text(ret);
-		if (pkt->stream_index == out_video_index)
-			fprintf(stderr, "last_video_dts: %ld, now_dts: %ld.\n", last_video_dts, pkt->dts);
-		if (pkt->stream_index == out_audio_index)
-			fprintf(stderr, "last_audio_dts: %ld, now_dts: %ld.\n", last_audio_dts, pkt->dts);
 		return ret;
 	}
-	if (index == out_video_index)
-		last_video_dts = pkt->dts;
-	if (index == out_audio_index)
-		last_audio_dts = pkt->dts;
 
 	return seg->segment_idx;
 }
