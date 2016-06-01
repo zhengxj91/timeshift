@@ -53,6 +53,9 @@ int CReceiver::InitReceiver(sInputParams *pParams) {
 	m_M3u8ListSize = pParams->nSegSize;
 	m_SegmentArraySize = (int) (pParams->nShiftTime * 60 / pParams->nSegTime);
 	m_SegmentWrap = m_SegmentArraySize + 4;
+	if(m_SegmentWrap < pParams->nSegWrap) {
+		m_SegmentWrap = pParams->nSegWrap;
+	}
 	m_SegmentTime = (double) pParams->nSegTime;
 	sprintf(tmp_m3u8_file, "%s.tmp", pParams->strHLSM3U8);
 
