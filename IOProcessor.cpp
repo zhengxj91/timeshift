@@ -329,6 +329,7 @@ AVPacket* CFFmpegIOProcessor::ReadOneAVPacket() {
 				}
 			}
 		} else if (pkt.dts < 0) {
+			av_log(NULL, AV_LOG_WARNING, "Negative dts in stream: %d, drop it.\n", pkt.stream_index);
 			av_packet_unref(&pkt);
 			continue;
 		}

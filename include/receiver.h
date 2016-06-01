@@ -19,7 +19,7 @@ public:
 	virtual int InitReceiver(sInputParams *pParams);
 	virtual int ResetInput(char *srcName);
 	virtual int ResetOutput(sInputParams *pParams, const int segment_start_num);
-	virtual int WriteM3u8List(char *list_name , const int list_size);
+	virtual int WriteM3u8List(char *list_name);
 	virtual int ReceivingLoop(sInputParams *pParams);
 
 protected:
@@ -37,9 +37,9 @@ protected:
 	double m_SegmentStartTime;
 	double m_SegmentTime;
 
-	unsigned int segment_duration_array[2048];
-	char tmp_m3u8_file[MAX_FILE_LENGTH];
-	char ts_name[MAX_FILE_LENGTH];
+	char *m_SegmentPrefix;
+	char m_TmpM3u8ListName[MAX_FILE_LENGTH];
+	char m_SegmentName[MAX_FILE_LENGTH];
 
 	std::vector<HLSSegment> m_SegmentArray;
 

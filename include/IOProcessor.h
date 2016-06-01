@@ -25,6 +25,7 @@ extern "C" {
 #include <libavutil/log.h>
 #include <libavutil/opt.h>
 #include "libavutil/dict.h"
+#include "libavutil/avstring.h"
 }
 ;
 #endif
