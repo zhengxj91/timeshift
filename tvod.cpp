@@ -21,18 +21,18 @@ void PrintHelp(char *strAppName, const char *strErrorMessage) {
 	printf("Usage: %s [<options>] \n", strAppName);
 	printf("\n");
 	printf("Options:\n");
-	printf(
-
-	"   [-i]                         - input file/stream.\n");
-	printf(
-
-	"   [-o]                     	- output file/stream.\n");
-	printf(
-
-	"   [-ts]                         - tmp ts file name.\n");
+	printf("   [-i]                         - input file/stream.\n");
+//	printf("   [-o]                     	- output file/stream.\n");
+	printf("   [-ts]                        - ts file name, such as '1-%%4d.ts'.\n");
+	printf("   [-m3u8]                      - m3u8 file name, such as 1.m3u8.\n");
+	printf("   [-size]                      - m3u8 list size, default is 4, and minimum is 3.\n");
+	printf("   [-time]                      - ts segment size in seconds .\n");
+	printf("   [-prefix]                    - ts segment directory prefix in m3u8 list.\n");
+	printf("   [-wrap]                      - ts segment index wrap.\n");
+	printf("   [-delay]                     - timeshift time in minutes.\n");
 }
 
-int ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
+mfxStatus ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
 	if (1 == nArgNum) {
 		PrintHelp(strInput[0], NULL);
 		return MFX_ERR_UNSUPPORTED;
@@ -44,7 +44,7 @@ int ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
 			pParams->strSrcFile = strInput[++i];
 		} else if (0 == strcmp(strInput[i], "-ts")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
-			pParams->strTmpFile = strInput[++i];
+			pParams->strTSFile = strInput[++i];
 		} else if (0 == strcmp(strInput[i], "-o")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
 			pParams->strDstFile = strInput[++i];
@@ -59,6 +59,9 @@ int ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
 			pParams->strM3U8Prefix = strInput[++i];
 		} else if (0 == strcmp(strInput[i], "-size")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
+			pParams->nSegSize = atoi(strInput[++i]);
+		} else if (0 == strcmp(strInput[i], "-time")) {
+			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
 			pParams->nSegTime = atoi(strInput[++i]);
 		} else if (0 == strcmp(strInput[i], "-wrap")) {
 			VAL_CHECK(i + 1 == nArgNum, i, strInput[i]);
@@ -72,7 +75,7 @@ int ParseInputString(char* strInput[], mfxU8 nArgNum, sInputParams* pParams) {
 		}
 	}
 
-	return 0;
+	return MFX_ERR_NONE;
 }
 
 CTimeShift::CTimeShift() :
@@ -142,14 +145,16 @@ int CTimeShift::Run(sInputParams *pParams) {
 
 	/*Receiver Thread Created*/
 	sInputParams pInThreadParams;
+	pInThreadParams.nThreadID = 0;
+	pInThreadParams.nSegSize = pParams->nSegSize?pParams->nSegSize:4;
+	pInThreadParams.nSegTime = pParams->nSegTime ? pParams->nSegTime : 10;
+	pInThreadParams.nSegWrap = pParams->nSegWrap ? pParams->nSegWrap : 1200;
+	pInThreadParams.nShiftTime = pParams->nShiftTime;
 	pInThreadParams.strSrcFile = pParams->strSrcFile;
-	pInThreadParams.strDstFile = pParams->strTmpFile;
-	pInThreadParams.m_pSafetyArea = m_pSafetyArea;
+	pInThreadParams.strDstFile = pParams->strTSFile;
 	pInThreadParams.strHLSM3U8 = pParams->strHLSM3U8;
 	pInThreadParams.strM3U8Prefix = pParams->strM3U8Prefix;
-	pInThreadParams.nSegTime = pParams->nSegTime ? pParams->nSegTime : 10;
-	pInThreadParams.nSegWrap = pParams->nSegWrap ? pParams->nSegWrap : 1800;
-	pInThreadParams.nThreadID = 0;
+//	pInThreadParams.m_pSafetyArea = m_pSafetyArea;
 	pthread = new MSDKThread(sts, RunReceiver, (void *) &pInThreadParams);
 	m_HDLArray.push_back(pthread);
 
@@ -188,7 +193,7 @@ int main(int argc, char *argv[]) {
 	int ret = 0;
 	sInputParams Params;   // input parameters from command line
 
-	if (ParseInputString(argv, (mfxU8) argc, &Params) < 0)
+	if (ParseInputString(argv, (mfxU8) argc, &Params) < MFX_ERR_NONE)
 		exit(0);
 
 	av_register_all();

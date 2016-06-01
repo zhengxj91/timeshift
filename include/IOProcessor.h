@@ -11,6 +11,7 @@
 #include <stdlib.h>
 #include <string>
 #include<list>
+#include<vector>
 #include <unistd.h>
 #include <memory>
 
@@ -152,8 +153,10 @@ private:
 
 struct sInputParams {
 
+	int nThreadID;
 	int nSrcFiles;
 	int nDstFiles;
+	int nSegSize;
 	int nSegTime;
 	int nSegWrap;
 	int64_t nShiftTime;
@@ -162,8 +165,7 @@ struct sInputParams {
 	char **pDstFile;
 
 	char *format;
-
-	char *strTmpFile;
+	char *strTSFile;
 	char *strSrcFile;
 	char *strDstFile;
 	char *strHLSM3U8;
@@ -171,8 +173,6 @@ struct sInputParams {
 	char *strOutInterface;
 
 	SafetyDataArea *m_pSafetyArea;
-
-	int nThreadID;
 
 	sInputParams() {
 		memset(this, 0, sizeof(*this));

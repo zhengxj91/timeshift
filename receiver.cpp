@@ -10,8 +10,9 @@
 using namespace std;
 
 CReceiver::CReceiver() :
-		m_bWaitFirstVPkt(true), m_pSafetyArea(NULL), m_M3u8ListSize(0), m_SegmentWrap(0), m_SegmentIndex(0), m_PacketTime(0), m_SegmentNum(
-				0), m_SegmentStartTime(0.0), m_SegmentTime(0.0), m_MeidaSequence(0), m_bKeyFrame(false) {
+		m_bWaitFirstVPkt(true), m_pSafetyArea(NULL), m_M3u8ListSize(0), m_SegmentIndex(0), m_SegmentArraySize(
+				0), m_SegmentWrap(0), m_PacketTime(0), m_SegmentNum(0), m_SegmentStartTime(0.0), m_SegmentTime(
+				0.0), m_MeidaSequence(0), m_bKeyFrame(false) {
 
 }
 
@@ -20,9 +21,7 @@ CReceiver::~CReceiver() {
 }
 
 void CReceiver::Close() {
-	if (InProcessor.get()) {
-
-	}
+	m_SegmentArray.clear();
 }
 
 int CReceiver::InitReceiver(sInputParams *pParams) {
@@ -49,10 +48,13 @@ int CReceiver::InitReceiver(sInputParams *pParams) {
 		av_log(NULL, AV_LOG_ERROR, "Could not open output file '%s'", ts_name);
 		return ret;
 	}
-	m_pSafetyArea = pParams->m_pSafetyArea;
-	m_M3u8ListSize = pParams->nSegWrap;
-	m_SegmentWrap = pParams->nSegWrap + 4;
-	m_SegmentTime = pParams->nSegTime;
+
+//	m_pSafetyArea = pParams->m_pSafetyArea;
+	m_M3u8ListSize = pParams->nSegSize;
+	m_SegmentArraySize = (int) (pParams->nShiftTime * 60 / pParams->nSegTime);
+	m_SegmentWrap = m_SegmentArraySize + 4;
+	m_SegmentTime = (double) pParams->nSegTime;
+	sprintf(tmp_m3u8_file, "%s.tmp", pParams->strHLSM3U8);
 
 	return 0;
 }
@@ -79,31 +81,32 @@ int CReceiver::ResetOutput(sInputParams *pParams, const int segment_start_num) {
 	return 0;
 }
 
-int CReceiver::WriteM3u8List(sInputParams *pParams) {
+int CReceiver::WriteM3u8List(char *list_name, const int list_size) {
 	FILE *list_fp;
-	std::list<HLSSegment>::iterator it;
 	list_fp = fopen(tmp_m3u8_file, "w");
 	if (!list_fp) {
 		fprintf(stderr, "Could not open temporary m3u8 index file (%s), no index file will be created\n",
 				tmp_m3u8_file);
 		return -1;
 	}
-	double maxDuration = m_SegmentList.front().duration;
-	for (it = m_SegmentList.begin(); it != m_SegmentList.end(); it++) {
-		if (it->duration > maxDuration) {
-			maxDuration = it->duration;
+	double maxDuration = m_SegmentArray.front().duration;
+	for (int i = 0; i < list_size; i++) {
+		if (m_SegmentArray[i].duration > maxDuration) {
+			maxDuration = m_SegmentArray[i].duration;
 		}
 	}
-	fprintf(list_fp, "#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-TARGETDURATION:%ld\n#EXT-X-MEDIA-SEQUENCE:%ld\n", (int64_t) ceil(maxDuration), m_MeidaSequence);
-	for (it = m_SegmentList.begin(); it != m_SegmentList.end(); it++) {
-		if (fprintf(list_fp, "#EXTINF:%f,\n%s\n", it->duration, it->tsName) < 0) {
+	fprintf(list_fp,
+			"#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-ALLOW-CACHE:NO\n#EXT-X-TARGETDURATION:%ld\n#EXT-X-MEDIA-SEQUENCE:%ld\n",
+			(int64_t) ceil(maxDuration), m_MeidaSequence);
+	for (int i = 0; i < list_size; i++) {
+		if (fprintf(list_fp, "#EXTINF:%f,\n%s\n", m_SegmentArray[i].duration, m_SegmentArray[i].tsName) < 0) {
 			fprintf(stderr, "Failed to write to tmp m3u8 index file\n");
 			return -1;
 		}
 	}
 	fclose(list_fp);
 
-	return rename(tmp_m3u8_file, pParams->strHLSM3U8);
+	return rename(tmp_m3u8_file, list_name);
 }
 
 int CReceiver::ReceivingLoop(sInputParams *pParams) {
@@ -116,7 +119,6 @@ int CReceiver::ReceivingLoop(sInputParams *pParams) {
 	int video_index = InProcessor->in_video_index;
 	double dts2time = InProcessor->dts2time;
 	double start_time = InProcessor->start_time;
-	sprintf(tmp_m3u8_file, "%s.tmp", pParams->strHLSM3U8);
 
 	if (InProcessor.get()) {
 		while (1) {
@@ -139,25 +141,27 @@ int CReceiver::ReceivingLoop(sInputParams *pParams) {
 					avio_flush(InProcessor->ofmt_ctx->pb);
 					avio_close(InProcessor->ofmt_ctx->pb);
 					m_SegmentNum++;
-					if(m_SegmentNum % 30 == 0) {
-						av_log(NULL, AV_LOG_INFO, "Segments: %ld", m_SegmentNum);
+					if (m_SegmentNum % 30 == 0) {
+						av_log(NULL, AV_LOG_INFO, "Segments: %ld\n", m_SegmentNum);
 					}
 					seg.duration = m_PacketTime - m_SegmentStartTime;
 					seg.index = m_SegmentIndex;
 					memcpy(seg.tsName, ts_name, sizeof(ts_name));
-					m_SegmentList.push_back(seg);
-					if (m_SegmentNum > m_M3u8ListSize) {
-						m_MeidaSequence ++;
-						m_SegmentList.pop_front();
+					m_SegmentArray.push_back(seg);
+					if (m_SegmentNum >= m_M3u8ListSize) {
+						m_MeidaSequence++; //num of segments that deleted.
+						if (WriteM3u8List(pParams->strHLSM3U8, m_M3u8ListSize) < 0)
+							break;
+						printf("segment array size, before: %ld, ", m_SegmentArray.size());
+						m_SegmentArray.erase(m_SegmentArray.begin());
+						printf("after: %ld\n", m_SegmentArray.size());
 					}
-					WriteM3u8List(pParams);
-					m_SegmentIndex++;
-					m_SegmentIndex %= m_SegmentWrap;
+					m_SegmentIndex = (++m_SegmentIndex) % m_SegmentWrap;
 					if (av_get_frame_filename(ts_name, sizeof(ts_name),
 							InProcessor->ofmt_ctx->filename, m_SegmentIndex) < 0) {
 						av_log(NULL, AV_LOG_ERROR, "Invalid segment filename template '%s'\n",
 								InProcessor->ofmt_ctx->filename);
-						return -1;
+						break;
 					}
 
 					if (avio_open(&InProcessor->ofmt_ctx->pb, ts_name, AVIO_FLAG_WRITE) < 0) {
@@ -186,6 +190,6 @@ int CReceiver::ReceivingLoop(sInputParams *pParams) {
 	if (pkt)
 		av_packet_unref(pkt);
 
-	return ret;
+	return 0;
 }
 
